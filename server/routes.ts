@@ -18,10 +18,12 @@ const upload = multer({
     fileSize: 300 * 1024 * 1024 // 300MB limit
   },
   fileFilter: (req: any, file: any, cb: any) => {
-    const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
+    console.log('File filter check:', file.mimetype, file.originalname);
+    const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a', 'audio/mp3'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
+      console.log('Rejected file type:', file.mimetype);
       cb(new Error('Invalid file type. Only MP3, WAV, and M4A files are allowed.'));
     }
   }
@@ -52,18 +54,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   };
 
-  // Upload audio file
-  app.post('/api/upload', upload.single('audio'), async (req: MulterRequest, res) => {
+  // Upload audio file with error handling
+  app.post('/api/upload', (req: MulterRequest, res, next) => {
+    upload.single('audio')(req, res, (err) => {
+      if (err) {
+        console.error('Multer error:', err);
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ error: 'File too large. Maximum size is 300MB.' });
+        }
+        return res.status(400).json({ error: err.message });
+      }
+      next();
+    });
+  }, async (req: MulterRequest, res) => {
     try {
+      console.log('Upload request received');
+      console.log('Request file:', req.file);
+      console.log('Request body:', req.body);
+      
       if (!req.file) {
+        console.log('No file found in request');
         return res.status(400).json({ error: 'No file uploaded' });
       }
+
+      console.log('File uploaded successfully:', req.file.filename);
 
       const audioFile = await storage.createAudioFile({
         filename: req.file.filename,
         originalName: req.file.originalname,
         status: 'uploaded'
       });
+
+      console.log('Audio file created in database:', audioFile.id);
 
       // Start processing job
       const job = await storage.createProcessingJob({
@@ -72,6 +94,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         progress: 0,
         status: 'pending'
       });
+
+      console.log('Processing job created:', job.id);
 
       // Start processing asynchronously
       processAudioFile(audioFile.id, req.file.path, broadcast);

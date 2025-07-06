@@ -2,19 +2,32 @@
 
 Since Replit requires a paid plan for deployment, here are free alternatives:
 
-## Option 1: Vercel (Recommended)
+## Option 1: Railway (Recommended for Full-Stack)
+
+**Perfect for your app structure - supports Node.js + PostgreSQL**
 
 1. **Create a GitHub repository** and push your code
-2. **Go to vercel.com** and sign in with GitHub
-3. **Import your repository**
-4. **Add environment variables** in Vercel dashboard:
-   - `DATABASE_URL` - Your PostgreSQL connection string
+2. **Go to railway.app** and sign in with GitHub
+3. **Create new project** from GitHub repo
+4. **Add environment variables**:
+   - `DATABASE_URL` - Railway provides free PostgreSQL
    - `OPENAI_API_KEY` - Your OpenAI API key
 5. **Deploy automatically**
 
-### Database for Vercel
-- Use **Neon** (free tier): https://neon.tech
-- Or **PlanetScale** (free tier): https://planetscale.com
+Railway includes:
+- ✅ Free PostgreSQL database
+- ✅ $5/month free credits (enough for most apps)
+- ✅ Supports full-stack Node.js applications
+- ✅ Auto-deploys from GitHub
+
+## Option 2: Render (Also Good for Full-Stack)
+
+1. **Go to render.com** and sign in with GitHub
+2. **Create new Web Service** from GitHub repo
+3. **Set build command**: `npm run build`
+4. **Set start command**: `npm run start`
+5. **Add environment variables**
+6. **Create PostgreSQL database** (free tier available)
 
 ## Option 2: Railway
 

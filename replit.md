@@ -98,6 +98,7 @@ Changelog:
 - July 06, 2025. Enhanced file upload with drag-and-drop animations
 - July 06, 2025. Improved processing progress with real-time updates
 - July 06, 2025. Added retry logic for API calls and robust error recovery
+- July 06, 2025. Integrated PostgreSQL database with Drizzle ORM for persistent data storage
 ```
 
 ## Recent Enhancements
@@ -119,6 +120,13 @@ Changelog:
 - Fallback handling for partial translation failures
 - File validation and size limits
 - Improved subtitle generation with timing validation
+
+### Database Integration
+- PostgreSQL database with Neon hosting for persistent data storage
+- Drizzle ORM for type-safe database operations
+- Automatic schema migrations with `npm run db:push`
+- Comprehensive error handling for database operations
+- Replaced in-memory storage with persistent database storage
 
 ## User Preferences
 

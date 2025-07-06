@@ -45,6 +45,7 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string>('');
   const [processingStages, setProcessingStages] = useState([
     { id: 'transcription', name: 'Speech Recognition', description: 'Converting audio to text', status: 'pending' as const },
     { id: 'translation', name: 'Translation', description: 'Translating Japanese to English', status: 'pending' as const },
@@ -75,10 +76,19 @@ export default function Home() {
   // Mutations
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
+      // Reset states
+      setUploadError('');
+      setOverallProgress(0);
+      setProcessingStages(prev => prev.map(stage => ({ ...stage, status: 'pending' as const })));
+      
       const formData = new FormData();
       formData.append('audio', file);
       
       const response = await apiRequest('POST', '/api/upload', formData);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Upload failed');
+      }
       return response.json();
     },
     onSuccess: (data) => {
@@ -86,11 +96,12 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ['/api/recent-files'] });
       queryClient.invalidateQueries({ queryKey: ['/api/processing-jobs'] });
       toast({
-        title: "File uploaded successfully",
-        description: "Processing will begin shortly..."
+        title: "Upload successful!",
+        description: "Your audio file is now being processed with AI precision."
       });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
+      setUploadError(error.message);
       toast({
         title: "Upload failed",
         description: error.message,
@@ -152,17 +163,18 @@ export default function Home() {
   const handleFileUpload = (file: File) => {
     setIsUploading(true);
     setUploadProgress(0);
+    setUploadError('');
     
-    // Simulate upload progress
+    // Smooth upload progress simulation
     const progressInterval = setInterval(() => {
       setUploadProgress(prev => {
         if (prev >= 90) {
           clearInterval(progressInterval);
           return prev;
         }
-        return prev + 10;
+        return prev + Math.random() * 15 + 5; // More realistic progress increments
       });
-    }, 200);
+    }, 300);
 
     uploadMutation.mutate(file, {
       onSettled: () => {
@@ -171,6 +183,10 @@ export default function Home() {
         clearInterval(progressInterval);
       }
     });
+  };
+
+  const handleClearError = () => {
+    setUploadError('');
   };
 
   const handleSubtitleEdit = (id: number, updates: Partial<Subtitle>) => {
@@ -202,25 +218,39 @@ export default function Home() {
   const hasSubtitles = subtitles.length > 0;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
+      <header className="bg-white/80 backdrop-blur-lg border-b border-slate-200/50 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                <Languages className="text-white w-5 h-5" />
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-gradient-primary rounded-2xl flex items-center justify-center shadow-lg">
+                <Languages className="text-white w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-slate-900">SubtitleAI</h1>
-                <p className="text-xs text-slate-500">Japanese → English Subtitles with AI Precision</p>
+                <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">SubtitleAI</h1>
+                <p className="text-xs text-slate-600">Japanese → English Subtitles with AI Precision</p>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm">
+            <div className="flex items-center space-x-3">
+              {hasSubtitles && (
+                <Button 
+                  onClick={() => {
+                    setCurrentAudioFile(null);
+                    setOverallProgress(0);
+                    setProcessingStages(prev => prev.map(stage => ({ ...stage, status: 'pending' as const })));
+                  }}
+                  className="bg-gradient-primary hover:opacity-90 text-white"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  New File
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" className="hover:bg-slate-100">
                 <HelpCircle className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="hover:bg-slate-100">
                 <Settings className="w-4 h-4" />
               </Button>
             </div>
@@ -234,11 +264,16 @@ export default function Home() {
           <div className="lg:col-span-2 space-y-6">
             {/* File Upload Section */}
             {!currentAudioFile && (
-              <Card>
-                <CardHeader>
+              <Card className="border-0 shadow-xl bg-white/60 backdrop-blur-lg hover-lift">
+                <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle>Upload Audio</CardTitle>
-                    <span className="text-sm text-slate-500">MP3, WAV, M4A</span>
+                    <CardTitle className="text-xl font-bold text-slate-800">Upload Audio File</CardTitle>
+                    <div className="flex items-center space-x-2 text-sm text-slate-500">
+                      <span>Supports:</span>
+                      <span className="bg-slate-100 px-2 py-1 rounded-md font-medium">MP3</span>
+                      <span className="bg-slate-100 px-2 py-1 rounded-md font-medium">WAV</span>
+                      <span className="bg-slate-100 px-2 py-1 rounded-md font-medium">M4A</span>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -246,6 +281,8 @@ export default function Home() {
                     onFileUpload={handleFileUpload}
                     isUploading={isUploading}
                     uploadProgress={uploadProgress}
+                    error={uploadError}
+                    onClearError={handleClearError}
                   />
                 </CardContent>
               </Card>
@@ -276,13 +313,24 @@ export default function Home() {
 
             {/* Processing Progress */}
             {isProcessing && (
-              <Card>
-                <CardHeader>
+              <Card className="border-0 shadow-xl bg-gradient-to-br from-blue-50 to-indigo-100 hover-lift">
+                <CardHeader className="pb-4">
                   <div className="flex items-center justify-between">
-                    <CardTitle>Processing Audio</CardTitle>
-                    <span className="text-sm text-slate-500">
-                      {processingStages.find(s => s.status === 'processing')?.name || 'Processing...'}
-                    </span>
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center animate-pulse-slow">
+                        <Languages className="text-white w-5 h-5" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-xl font-bold text-slate-800">AI Processing</CardTitle>
+                        <p className="text-sm text-slate-600">
+                          {processingStages.find(s => s.status === 'processing')?.name || 'Processing your audio...'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-slate-800">{overallProgress}%</p>
+                      <p className="text-xs text-slate-500">Complete</p>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -297,7 +345,7 @@ export default function Home() {
 
             {/* Subtitle Preview */}
             {hasSubtitles && (
-              <Card>
+              <Card className="border-0 shadow-xl bg-white/60 backdrop-blur-lg hover-lift">
                 <CardContent className="p-6">
                   <SubtitlePreview
                     subtitles={subtitles}

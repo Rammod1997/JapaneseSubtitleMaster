@@ -24,17 +24,22 @@
   --ring: hsl(20, 14.3%, 4.1%);
   --radius: 0.5rem;
   
-  /* Custom brand colors */
-  --brand-50: hsl(214, 100%, 97%);
-  --brand-100: hsl(214, 95%, 93%);
-  --brand-200: hsl(213, 97%, 87%);
-  --brand-300: hsl(212, 96%, 78%);
-  --brand-400: hsl(213, 94%, 68%);
-  --brand-500: hsl(217, 91%, 60%);
-  --brand-600: hsl(221, 83%, 53%);
-  --brand-700: hsl(224, 76%, 48%);
-  --brand-800: hsl(226, 71%, 40%);
-  --brand-900: hsl(224, 64%, 33%);
+  /* Modern gradient colors */
+  --gradient-start: hsl(240, 100%, 64%);
+  --gradient-end: hsl(315, 100%, 64%);
+  --accent-blue: hsl(221, 83%, 53%);
+  --accent-purple: hsl(262, 83%, 58%);
+  
+  /* Glassmorphism variables */
+  --glass-bg: hsla(0, 0%, 100%, 0.1);
+  --glass-border: hsla(0, 0%, 100%, 0.2);
+  --glass-shadow: 0 8px 32px hsla(0, 0%, 0%, 0.37);
+  
+  /* Status colors */
+  --success: hsl(142, 76%, 36%);
+  --warning: hsl(38, 92%, 50%);
+  --error: hsl(0, 84%, 60%);
+  --info: hsl(221, 83%, 53%);
 }
 
 .dark {
@@ -71,23 +76,41 @@
 }
 
 @layer utilities {
-  .text-brand-500 {
-    color: var(--brand-500);
+  /* Modern gradient backgrounds */
+  .bg-gradient-primary {
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
   }
   
-  .bg-brand-500 {
-    background-color: var(--brand-500);
+  .bg-gradient-glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
   }
   
-  .bg-brand-50 {
-    background-color: var(--brand-50);
+  /* Status colors */
+  .text-success { color: var(--success); }
+  .text-warning { color: var(--warning); }
+  .text-error { color: var(--error); }
+  .text-info { color: var(--info); }
+  
+  .bg-success { background-color: var(--success); }
+  .bg-warning { background-color: var(--warning); }
+  .bg-error { background-color: var(--error); }
+  .bg-info { background-color: var(--info); }
+  
+  /* Modern animations */
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
   
-  .border-brand-300 {
-    border-color: var(--brand-300);
+  .animate-bounce-gentle {
+    animation: bounce 2s ease-in-out infinite;
   }
   
-  .hover\:bg-brand-600:hover {
-    background-color: var(--brand-600);
+  /* Hover effects */
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    transition: transform 0.2s ease-in-out;
   }
 }

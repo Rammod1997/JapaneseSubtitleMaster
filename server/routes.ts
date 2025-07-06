@@ -9,13 +9,13 @@ import { audioProcessor } from "./services/audio-processor";
 import { translationService } from "./services/translation";
 
 interface MulterRequest extends Request {
-  file?: multer.File;
+  file?: Express.Multer.File;
 }
 
 const upload = multer({ 
   dest: 'uploads/',
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit
+    fileSize: 300 * 1024 * 1024 // 300MB limit
   },
   fileFilter: (req: any, file: any, cb: any) => {
     const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
@@ -165,9 +165,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 }
 
 async function processAudioFile(audioFileId: number, filePath: string, broadcast: (message: any) => void) {
+  let job: any = null;
+  
   try {
+    // Validate inputs
+    if (!audioFileId || !filePath) {
+      throw new Error('Invalid parameters: audioFileId and filePath are required');
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      throw new Error('Audio file not found');
+    }
+
     // Update job status
-    const job = await storage.createProcessingJob({
+    job = await storage.createProcessingJob({
       audioFileId,
       stage: 'transcription',
       progress: 0,
@@ -182,8 +194,31 @@ async function processAudioFile(audioFileId: number, filePath: string, broadcast
       status: 'processing'
     });
 
-    // Step 1: Transcribe audio
-    const transcriptionResult = await audioProcessor.transcribeAudio(filePath);
+    // Step 1: Transcribe audio with retry logic
+    let transcriptionResult;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    while (retryCount < maxRetries) {
+      try {
+        transcriptionResult = await audioProcessor.transcribeAudio(filePath);
+        break;
+      } catch (transcriptionError) {
+        retryCount++;
+        console.warn(`Transcription attempt ${retryCount} failed:`, transcriptionError);
+        
+        if (retryCount >= maxRetries) {
+          throw new Error(`Transcription failed after ${maxRetries} attempts: ${transcriptionError instanceof Error ? transcriptionError.message : 'Unknown error'}`);
+        }
+        
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+      }
+    }
+
+    if (!transcriptionResult) {
+      throw new Error('Transcription failed: No result obtained');
+    }
     
     // Update audio file with duration
     await storage.updateAudioFileStatus(audioFileId, 'transcribing');
@@ -202,7 +237,7 @@ async function processAudioFile(audioFileId: number, filePath: string, broadcast
       status: 'processing'
     });
 
-    // Step 2: Translation
+    // Step 2: Translation with error handling
     await storage.updateProcessingJob(job.id, {
       stage: 'translation',
       progress: 60,
@@ -217,15 +252,32 @@ async function processAudioFile(audioFileId: number, filePath: string, broadcast
       status: 'processing'
     });
 
-    // Process segments or full text
-    const segments = transcriptionResult.segments || [{
-      start: 0,
-      end: transcriptionResult.duration * 1000,
-      text: transcriptionResult.text
-    }];
+    // Process segments or full text safely
+    const segments = transcriptionResult.segments && transcriptionResult.segments.length > 0 
+      ? transcriptionResult.segments 
+      : [{
+          start: 0,
+          end: (transcriptionResult.duration || 30) * 1000,
+          text: transcriptionResult.text || 'No transcription available'
+        }];
 
-    const translationTexts = segments.map(segment => segment.text);
-    const translations = await translationService.translateBatch(translationTexts);
+    if (segments.length === 0) {
+      throw new Error('No audio segments found to translate');
+    }
+
+    const translationTexts = segments.map(segment => segment.text).filter(text => text && text.trim());
+    
+    if (translationTexts.length === 0) {
+      throw new Error('No valid text found for translation');
+    }
+
+    let translations;
+    try {
+      translations = await translationService.translateBatch(translationTexts);
+    } catch (translationError) {
+      console.error('Translation failed:', translationError);
+      throw new Error(`Translation failed: ${translationError instanceof Error ? translationError.message : 'Unknown translation error'}`);
+    }
 
     // Step 3: Generate subtitles
     await storage.updateProcessingJob(job.id, {
@@ -242,18 +294,31 @@ async function processAudioFile(audioFileId: number, filePath: string, broadcast
       status: 'processing'
     });
 
-    // Create subtitle entries
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-      const translation = translations[i];
+    // Create subtitle entries with validation
+    const validTranslations = translations.filter(t => t && t.translatedText);
+    
+    if (validTranslations.length === 0) {
+      throw new Error('No valid translations generated');
+    }
 
-      await storage.createSubtitle({
-        audioFileId,
-        startTime: segment.start,
-        endTime: segment.end,
-        japaneseText: segment.text,
-        englishText: translation.translatedText
-      });
+    for (let i = 0; i < Math.min(segments.length, validTranslations.length); i++) {
+      const segment = segments[i];
+      const translation = validTranslations[i];
+
+      if (!segment || !translation) continue;
+
+      try {
+        await storage.createSubtitle({
+          audioFileId,
+          startTime: Math.max(0, segment.start || 0),
+          endTime: Math.max(segment.start || 0, segment.end || 1000),
+          japaneseText: segment.text || 'No text',
+          englishText: translation.translatedText || 'No translation'
+        });
+      } catch (subtitleError) {
+        console.error(`Failed to create subtitle ${i}:`, subtitleError);
+        // Continue with other subtitles even if one fails
+      }
     }
 
     // Complete processing
@@ -278,27 +343,46 @@ async function processAudioFile(audioFileId: number, filePath: string, broadcast
   } catch (error) {
     console.error('Processing error:', error);
     
-    await storage.updateAudioFileStatus(audioFileId, 'failed');
+    // Safely update audio file status
+    try {
+      await storage.updateAudioFileStatus(audioFileId, 'failed');
+    } catch (updateError) {
+      console.error('Failed to update audio file status:', updateError);
+    }
     
-    const jobs = await storage.getActiveProcessingJobs();
-    const currentJob = jobs.find(j => j.audioFileId === audioFileId);
-    
-    if (currentJob) {
-      await storage.updateProcessingJob(currentJob.id, {
-        status: 'failed',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+    // Safely update processing job
+    try {
+      const jobs = await storage.getActiveProcessingJobs();
+      const currentJob = jobs.find(j => j.audioFileId === audioFileId) || job;
+      
+      if (currentJob) {
+        await storage.updateProcessingJob(currentJob.id, {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown processing error'
+        });
+      }
+    } catch (jobUpdateError) {
+      console.error('Failed to update processing job:', jobUpdateError);
     }
 
-    broadcast({
-      type: 'processing-error',
-      audioFileId,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
+    // Safely broadcast error
+    try {
+      broadcast({
+        type: 'processing-error',
+        audioFileId,
+        error: error instanceof Error ? error.message : 'Unknown processing error'
+      });
+    } catch (broadcastError) {
+      console.error('Failed to broadcast error:', broadcastError);
+    }
 
-    // Clean up uploaded file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    // Safely clean up uploaded file
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (cleanupError) {
+      console.error('Failed to clean up file:', cleanupError);
     }
   }
 }
